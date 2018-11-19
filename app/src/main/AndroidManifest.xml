@@ -5,11 +5,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.example.wangyicheng.spamtextdetector">
 
+    <!-- TODO: change the icon -->
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name">
 
+        <!-- The declaration of the widget -->
         <receiver android:name=".DetectorWidgetProvider">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -19,8 +21,18 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_provider_info" />
         </receiver>
+
+        <!-- The declaration of the service -->
+        <service android:name=".DetectorWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
     </application>
 
+    <!-- SDK requirement -->
     <uses-sdk android:minSdkVersion="8" />
+
+    <!-- Permissions for reading texts -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS"/>
+    <uses-permission android:name="android.permission.READ_SMS" />
 
 </manifest>

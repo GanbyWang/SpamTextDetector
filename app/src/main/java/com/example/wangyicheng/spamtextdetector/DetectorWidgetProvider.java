@@ -1,14 +1,16 @@
 package com.example.wangyicheng.spamtextdetector;
 
-import android.app.AlertDialog;
 import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProvider;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Message;
+import android.os.Handler;
 import android.telephony.SmsMessage;
 import android.text.Html;
+import android.util.Log;
 import android.widget.RemoteViews;
 import android.widget.Toast;
 
@@ -23,12 +25,16 @@ import java.util.Date;
 
 public class DetectorWidgetProvider extends AppWidgetProvider {
 
+    // Static strings for HTTP requests
     private final String SMS_RECIEVED = "android.provider.Telephony.SMS_RECEIVED";
+    private final String PREDICT_URL = "http://18.222.232.141/predict/";
 
-    /* Currently the methods function as default
-     * Might not include all functions
-     * Always call super function first
-     * TODO: override functions as needed */
+    // Private variables to connect the handler and the main thread
+    // Not a good way to do though
+    private Context privateContext = null;
+    private String msgTime = "";
+    private String msgAddress = "";
+    private String msgBody = "";
 
     /**
      * Called when the first widget is created
@@ -78,6 +84,8 @@ public class DetectorWidgetProvider extends AppWidgetProvider {
         String action = intent.getAction();
         // Get the bundle
         Bundle bundle = intent.getExtras();
+        // Set the context variable for the handler
+        privateContext = context;
 
         // Check if it's the correct broadcast
         if (action.equals(SMS_RECIEVED) && bundle != null) {
@@ -94,51 +102,94 @@ public class DetectorWidgetProvider extends AppWidgetProvider {
                     Date date = new Date(msg.getTimestampMillis());
                     SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
                     // Only need the time
-                    String msgTime = format.format(date);
+                    msgTime = format.format(date);
                     msgTime = msgTime.substring(11);
 
-                    String msgAddress = msg.getOriginatingAddress();
-                    String msgBody = msg.getDisplayMessageBody();
+                    msgAddress = msg.getOriginatingAddress();
+                    msgBody = msg.getDisplayMessageBody();
 
-                    // TODO: do the prediction
-                    boolean ifSpam = false;
+                    String msgToSend = "{\"text\":\"" + msgBody + "\"}";
 
-                    // Get the remote view of the layout
-                    RemoteViews remoteViews = new RemoteViews(context.getPackageName(),
-                            R.layout.widget_layout);
-
-                    // Seems we cannot place the whole message in the widget
-                    /* String htmlSrc = "You received a message from <b>" + msgAddress + "</b> at "
-                            + " <b>" + msgTime + "</b>, and it says that <i>" + msgBody + "</i>.";
-                            */
-
-                    String htmlSrc = "You received a message from <b>" + msgAddress + "</b> at "
-                            + " <b>" + msgTime + "</b>.";
-
-                    if (ifSpam == true) {
-                        htmlSrc += " <font color=\"red\">It's a spam text!</font>";
-                    } else {
-                        htmlSrc += " <font color=\"green\">It's not a spam text.</font>";
-                    }
-
-                    remoteViews.setTextViewText(R.id.message, Html.fromHtml(htmlSrc));
-
-                    // Get the widget manager
-                    AppWidgetManager appWidgetManager = AppWidgetManager.getInstance(context);
-                    // Get all widgets
-                    ComponentName componentName = new ComponentName(context,
-                            DetectorWidgetProvider.class);
-                    // Update the all widgets
-                    appWidgetManager.updateAppWidget(componentName, remoteViews);
-
-                    // Use a toast to alert user
-                    if (ifSpam == true) {
-                        Toast.makeText(context, "Spam Text Received!", Toast.LENGTH_SHORT).show();
-                    }
+                    // Do the prediction
+                    // Move everything to the handler
+                    new HttpPost(msgToSend.getBytes(), PREDICT_URL,
+                            predictHandler, HttpPost.TYPE_CHECK);
                 }
             }
         }
 
         super.onReceive(context, intent);
     }
+
+    // Private handler of HTTP POST request
+    Handler predictHandler = new Handler() {
+
+        /**
+         * The overridden handleMessage function
+         * @param: the message containing the POST response
+         * */
+        @Override
+        public void handleMessage(Message msg) {
+
+            // Get the result from the message
+            String result = msg.obj.toString();
+
+            // Switch the logic based on the types
+            switch (msg.what) {
+
+                // If the POST is successful
+                case HttpPost.POST_SUCC:
+
+                    if (privateContext != null) {
+
+                        // Get the remote view of the layout
+                        RemoteViews remoteViews = new RemoteViews(privateContext.getPackageName(),
+                                R.layout.widget_layout);
+
+                        // Generate the text view to present
+                        String htmlSrc = "You received a message from <b>" + msgAddress + "</b> at "
+                                + " <b>" + msgTime + "</b>.";
+
+                        // Check if it's a spam text
+                        if (result.equals("true")) {
+                            htmlSrc += " <font color=\"red\">It's a spam text!</font>";
+                        } else {
+                            htmlSrc += " <font color=\"green\">It's not a spam text.</font>";
+                        }
+
+                        // Set the view
+                        remoteViews.setTextViewText(R.id.message, Html.fromHtml(htmlSrc));
+
+                        // Get the widget manager
+                        AppWidgetManager appWidgetManager =
+                                AppWidgetManager.getInstance(privateContext);
+                        // Get all widgets
+                        ComponentName componentName = new ComponentName(privateContext,
+                                DetectorWidgetProvider.class);
+                        // Update the all widgets
+                        appWidgetManager.updateAppWidget(componentName, remoteViews);
+
+                        // Use a toast to alert user
+                        if (result.equals("true")) {
+                            Toast.makeText(privateContext, "Spam Text Received!",
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                    }
+
+                    break;
+
+                // If the POST failed
+                case HttpPost.POST_FAIL:
+                    Toast.makeText(privateContext, "POST failed!", Toast.LENGTH_SHORT).show();
+                    break;
+
+                // Unrecognized response type
+                default:
+                    Toast.makeText(privateContext, "Unrecognized response type!",
+                            Toast.LENGTH_SHORT).show();
+            }
+
+        }
+    };
+
 }
